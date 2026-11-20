@@ -128,6 +128,52 @@ def annual_counts(
     return {r["year"]: int(r["cnt"]) for r in rows}
 
 
+def period_counts(
+    periods: list[tuple[str, str, str]],
+    primary_type: Optional[str] = None,
+    description_in: Optional[list[str]] = None,
+    app_token: Optional[str] = None,
+) -> dict:
+    """
+    Counts for arbitrary, non-calendar date ranges in one query — e.g. to
+    compare "the year before a mayor took office" against "mayoral year 1,"
+    "mayoral year 2," etc., instead of being stuck with calendar years.
+
+    periods: list of (label, start, end) tuples, each "YYYY-MM-DD", end exclusive.
+        Example: [("pre", "2022-05-15", "2023-05-15"), ("yr1", "2023-05-15", "2024-05-15")]
+
+    Returns {label: count}. Ranges should be contiguous/non-overlapping if you
+    want them to partition the data cleanly, but nothing enforces that.
+    """
+    # Sorted by start date so an ordinary CASE WHEN chain (tested against the
+    # live API) assigns each row to the first matching range.
+    ordered = sorted(periods, key=lambda p: p[1])
+    when_clauses = " ".join(
+        f"WHEN date >= '{start}T00:00:00' AND date < '{end}T00:00:00' THEN {_soql_string(label)}"
+        for label, start, end in ordered
+    )
+    case_expr = f"CASE {when_clauses} ELSE {_soql_string('_other')} END as period"
+
+    where = []
+    if primary_type:
+        where.append(f"primary_type = {_soql_string(primary_type)}")
+    if description_in:
+        desc_clause = " OR ".join(f"description = {_soql_string(d)}" for d in description_in)
+        where.append(f"({desc_clause})")
+    earliest = min(p[1] for p in periods)
+    latest = max(p[2] for p in periods)
+    where.append(f"date >= '{earliest}T00:00:00' AND date < '{latest}T00:00:00'")
+
+    params = {
+        "$select": f"{case_expr}, count(*) as cnt",
+        "$where": " AND ".join(where),
+        "$group": "period",
+        "$limit": 1000,
+    }
+    rows = _run_query(params, app_token)
+    return {r["period"]: int(r["cnt"]) for r in rows}
+
+
 def list_descriptions(primary_type: str, app_token: Optional[str] = None) -> dict:
     """All `description` values under a primary_type, with total counts. Useful
     for finding the exact label a crime sub-type is filed under (e.g. that
@@ -150,3 +196,18 @@ if __name__ == "__main__":
     )
     for year, count in sorted(carjacking.items()):
         print(year, count)
+
+    # Example: arbitrary, non-calendar windows (e.g. comparing against a
+    # specific date instead of Jan 1 - useful for "under administration X"
+    # claims, which rarely line up with calendar years).
+    print()
+    print(
+        period_counts(
+            [
+                ("pre_period", "2022-05-15", "2023-05-15"),
+                ("year_1", "2023-05-15", "2024-05-15"),
+                ("year_2", "2024-05-15", "2025-05-15"),
+            ],
+            description_in=["VEHICULAR HIJACKING", "AGGRAVATED VEHICULAR HIJACKING"],
+        )
+    )
