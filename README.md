@@ -138,6 +138,14 @@ noting: those official releases always compare to the *immediately preceding*
 year — not to a year further back, which can make an improvement look larger
 or smaller depending on which base year gets picked.
 
+## Worked example
+
+[ANALYSIS.md](ANALYSIS.md) — a full case study using this tool: checking a
+Chicago mayoral social-media post's carjacking/robbery percentage claims and
+a "record low" claim against this dataset, cross-checked against CPD's own
+published numbers. Covers exact-date-range queries, matching a non-obvious
+"year to date" comparison, and where the claims did and didn't hold up.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
